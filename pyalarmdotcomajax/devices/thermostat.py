@@ -73,15 +73,15 @@ class Thermostat(DesiredStateMixin, BaseDevice):
 
         # https://www.alarm.com/web/system/assets/customer-ember/enums/ThermostatFanMode.js
 
-        AUTO = 0
-        ON = 1
+        AUTO = 0  # Technically AUTO_LOW
+        ON = 1  # Technically ON_LOW
+        CIRCULATE = 6
 
         # Not Used
         # AUTO_HIGH = 2
         # ON_HIGH = 3
         # AUTO_MEDIUM = 4
         # ON_MEDIUM = 5
-        # CIRCULATE = 6
         # HUMIDITY = 7
 
     class LockMode(Enum):
@@ -134,35 +134,85 @@ class Thermostat(DesiredStateMixin, BaseDevice):
     def attributes(self) -> ThermostatAttributes | None:
         """Return thermostat attributes."""
 
+        # Descriptions from https://www.alarm.com/web/system/assets/customer-ember/models/devices/thermostat.ts
+
         return self.ThermostatAttributes(
-            temp_average=self._get_float("forwardingAmbientTemp"),
-            temp_at_tstat=self._get_float("ambientTemp"),
-            inferred_mode=self._get_special("inferredMode", self.DeviceState),
-            setpoint_offset=self._get_float("setpointOffset"),
-            supports_fan_mode=self._get_bool("supportsFanMode"),
-            supports_fan_indefinite=self._get_bool("supportsIndefiniteFanOn"),
+            temp_average=self._get_float(
+                "forwardingAmbientTemp"
+            ),  # The temperature text for the forwarding ambient temperature.
+            temp_at_tstat=self._get_float(
+                "ambientTemp"
+            ),  # The current temperature including any additional temperature sensor averaging.
+            inferred_mode=self._get_special(
+                "inferredMode", self.DeviceState
+            ),  # the indicated or inferred state in text form.
+            setpoint_offset=(
+                _setpoint_offset := self._get_float("setpointOffset")
+            ),  # The amount to increment or decrement the setpoint by when changing it.
+            supports_fan_mode=self._get_bool(
+                "supportsFanMode"
+            ),  # Whether the thermostat supports fan mode control.
+            supports_fan_indefinite=self._get_bool(
+                "supportsIndefiniteFanOn"
+            ),  # Whether the thermostat supports running the fan indefinitely.
             supports_fan_circulate_when_off=self._get_bool(
                 "supportsCirculateFanModeWhenOff"
-            ),
-            supported_fan_durations=self._get_list("supportedFanDurations", int),
+            ),  # Whether the thermostat supports the circulate fan mode when in OFF mode.
+            supported_fan_durations=self._get_list(
+                "supportedFanDurations", int
+            ),  # The fan mode durations that the thermostat supports
             fan_mode=self._get_special("fanMode", self.FanMode),
-            supports_heat=self._get_bool("supportsHeatMode"),
-            supports_heat_aux=self._get_bool("supportsAuxHeatMode"),
-            supports_cool=self._get_bool("supportsCoolMode"),
-            supports_auto=self._get_bool("supportsAutoMode"),
-            supports_setpoints=self._get_bool("supportsSetpoints"),
-            setpoint_buffer=self._get_float("autoSetpointBuffer"),
-            min_heat_setpoint=self._get_float("minHeatSetpoint"),
-            min_cool_setpoint=self._get_float("minCoolSetpoint"),
-            max_heat_setpoint=self._get_float("maxHeatSetpoint"),
-            max_cool_setpoint=self._get_float("maxCoolSetpoint"),
-            heat_setpoint=self._get_float("heatSetpoint"),
-            cool_setpoint=self._get_float("coolSetpoint"),
-            supports_humidity=self._get_bool("supportsHumidity"),
-            humidity=self._get_int("humidityLevel"),
-            supports_schedules=self._get_bool("supportsSchedules"),
-            supports_schedules_smart=self._get_bool("supportsSmartSchedules"),
-            schedule_mode=self._get_special("scheduleMode", self.ScheduleMode),
+            supports_heat=self._get_bool(
+                "supportsHeatMode"
+            ),  # Whether the thermostat supports the heat temp mode.
+            supports_heat_aux=self._get_bool(
+                "supportsAuxHeatMode"
+            ),  # Whether the thermostat supports the aux heat temp mode.
+            supports_cool=self._get_bool(
+                "supportsCoolMode"
+            ),  # Whether the thermostat supports the cool temp mode.
+            supports_auto=self._get_bool(
+                "supportsAutoMode"
+            ),  # Whether the thermostat supports the auto temp mode.
+            supports_setpoints=self._get_bool(
+                "supportsSetpoints"
+            ),  # Whether the thermostat supports setpoints.
+            setpoint_buffer=self._get_float(
+                "autoSetpointBuffer"
+            ),  # The minimum buffer between the heat and cool setpoints.
+            min_heat_setpoint=self._get_float(
+                "minHeatSetpoint"
+            ),  # The min valid heat setpoint.
+            min_cool_setpoint=self._get_float(
+                "minCoolSetpoint"
+            ),  # The min valid cool setpoint.
+            max_heat_setpoint=self._get_float(
+                "maxHeatSetpoint"
+            ),  # The max valid heat setpoint.
+            max_cool_setpoint=self._get_float(
+                "maxCoolSetpoint"
+            ),  # The max valid cool setpoint.
+            heat_setpoint=(_heat_setpoint - (_setpoint_offset or 0))
+            if ((_heat_setpoint := self._get_float("heatSetpoint")) is not None)
+            else _heat_setpoint,  # The current heat setpoint. Needs to be offset by setpointOffset.
+            cool_setpoint=(_cool_setpoint - (_setpoint_offset or 0))
+            if ((_cool_setpoint := self._get_float("coolSetpoint")) is not None)
+            else _cool_setpoint,  # The current cool setpoint. Needs to be offset by setpointOffset.
+            supports_humidity=self._get_bool(
+                "supportsHumidity"
+            ),  # Whether the device supports humidity.
+            humidity=self._get_int(
+                "humidityLevel"
+            ),  # The current humidity level reported by the device
+            supports_schedules=self._get_bool(
+                "supportsSchedules"
+            ),  # Whether the thermostat supports schedules.
+            supports_schedules_smart=self._get_bool(
+                "supportsSmartSchedules"
+            ),  # Whether the thermostat supports the Smart Schedule mode.
+            schedule_mode=self._get_special(
+                "scheduleMode", self.ScheduleMode
+            ),  # The schedule mode.
         )
 
     async def async_set_attribute(
