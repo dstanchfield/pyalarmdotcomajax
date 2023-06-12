@@ -4,12 +4,13 @@ from __future__ import annotations
 import contextlib
 import logging
 from abc import ABC
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Final, Optional, TypedDict
+from functools import partial
+from typing import Any, Final, TypedDict
 
-from pyalarmdotcomajax.const import ATTR_DESIRED_STATE, ATTR_STATE
+from pyalarmdotcomajax.const import ATTR_DESIRED_STATE, ATTR_STATE, CallbackEventType
 from pyalarmdotcomajax.exceptions import (
     InvalidConfigurationOption,
 )
@@ -84,6 +85,7 @@ class BaseDevice(ABC, CastingMixin):
         id_: str,
         send_action_callback: Callable,
         config_change_callback: Callable | None,
+        state_update_callback: Callable[[CallbackEventType, str], Awaitable],
         children: list[tuple[str, DeviceType]],
         raw_device_data: dict,
         device_type_specific_data: DeviceTypeSpecificData | None = None,
@@ -105,9 +107,8 @@ class BaseDevice(ABC, CastingMixin):
         self.trouble_conditions: list[TroubleCondition] = trouble_conditions if trouble_conditions else []
 
         self._send_action_callback = send_action_callback
-        self._config_change_callback: Callable | None = config_change_callback
-
-        self.external_update_callback: list[tuple[Callable, Optional[str]]] = []
+        self._config_change_callback = config_change_callback
+        self._state_update_callback = partial(state_update_callback, CallbackEventType.STATE_UPDATED)
 
         self.process_device_type_specific_data()
 
@@ -273,34 +274,36 @@ class BaseDevice(ABC, CastingMixin):
             device_type, event, device_id, msg_body, retry_on_failure
         ):
             try:
-                await self.async_handle_external_attribute_change(
+                await self.handle_async_attribute_change(
                     updated_device_object["data"]["attributes"], "user action response"
                 )
             except KeyError:
                 log.exception(f"Failed to update device {self.name} with response {updated_device_object}")
 
-    async def async_handle_external_dual_state_change(self, state: BaseDevice.DeviceState | int | None) -> None:
-        """Update device state when notified of externally-triggered change.
+    # #
+    # EVENT NOTIFICATION FUNCTIONS
+    # #
+
+    async def handle_async_state_change_finished(self, state: BaseDevice.DeviceState | int | None) -> None:
+        """Update device state when notified that desired state has been reached.
 
         Takes either a DeviceState or a DeviceState int value for the new state.
         """
 
         final_state = state.value if isinstance(state, Enum) else state
 
-        await self.async_handle_external_attribute_change(
+        await self.handle_async_attribute_change(
             {ATTR_STATE: final_state, ATTR_DESIRED_STATE: final_state}, "WebSocket message"
         )
 
-    async def async_handle_external_desired_state_change(self, state: BaseDevice.DeviceState | None) -> None:
-        """Update device state when notified of externally-triggered change."""
+    async def handle_async_state_change_started(self, state: BaseDevice.DeviceState | None) -> None:
+        """Update device desired state when notified of externally-triggered change."""
 
-        await self.async_handle_external_attribute_change(
+        await self.handle_async_attribute_change(
             {ATTR_DESIRED_STATE: state.value if isinstance(state, Enum) else state}, "WebSocket message"
         )
 
-    async def async_handle_external_attribute_change(
-        self, new_attributes: dict, source: str | None = None
-    ) -> None:
+    async def handle_async_attribute_change(self, new_attributes: dict, source: str | None = None) -> None:
         """Update device attribute when notified of externally-triggered change."""
 
         log.info(
@@ -319,35 +322,9 @@ class BaseDevice(ABC, CastingMixin):
                 log.debug(f"ATTRIBUTE NAME:: Current_Value -> Desired_Value{log_str}")
 
         # Trace logging for @catellie
-        log.debug(
-            f"{__name__} {self.name} ({self.id_}) has {len(self.external_update_callback)} external update"
-            " callbacks.)"
-        )
+        log.debug(f"{__name__} triggering external state update callback for {self.name} ({self.id_})")
 
-        for external_callback, listener_name in self.external_update_callback:
-            # Trace logging for @catellie
-            log.debug(
-                f"{__name__} Calling external update callback for listener {listener_name} by"
-                f" {self.name} ({self.id_})"
-            )
-
-            external_callback()
-
-    def register_external_update_callback(self, callback: Callable, listener_name: str | None = None) -> None:
-        """Register callback to be called when device state changes."""
-
-        # Trace logging for @catellie
-        log.debug(f"Registering external update callback for {listener_name} with {self.name} ({self.id_})")
-
-        self.external_update_callback.append((callback, listener_name))
-
-    def unregister_external_update_callback(self, callback: Callable, listener_name: str | None = None) -> None:
-        """Unregister callback to be called when device state changes."""
-
-        # Trace logging for @catellie
-        log.debug(f"Unregistering external update callback for {listener_name} with {self.name} ({self.id_})")
-
-        self.external_update_callback.remove((callback, listener_name))
+        await self._state_update_callback(self.id_)
 
     # #
     # PLACEHOLDERS

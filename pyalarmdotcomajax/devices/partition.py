@@ -122,7 +122,7 @@ class Partition(BaseDevice):
 
         log.debug("Calling arm stay.")
 
-        await self.async_handle_external_desired_state_change(self.DeviceState.ARMED_STAY)
+        await self.handle_async_state_change_started(self.DeviceState.ARMED_STAY)
 
         await self._async_arm(
             arm_type=self.Command.ARM_STAY,
@@ -142,7 +142,7 @@ class Partition(BaseDevice):
 
         log.debug("Calling arm away.")
 
-        await self.async_handle_external_desired_state_change(self.DeviceState.ARMED_AWAY)
+        await self.handle_async_state_change_started(self.DeviceState.ARMED_AWAY)
 
         await self._async_arm(
             arm_type=self.Command.ARM_AWAY,
@@ -162,7 +162,7 @@ class Partition(BaseDevice):
 
         log.debug("Calling arm night.")
 
-        await self.async_handle_external_desired_state_change(self.DeviceState.ARMED_NIGHT)
+        await self.handle_async_state_change_started(self.DeviceState.ARMED_NIGHT)
 
         await self._async_arm(
             arm_type=self.Command.ARM_STAY,
@@ -180,7 +180,7 @@ class Partition(BaseDevice):
 
         log.debug("Calling disarm.")
 
-        await self.async_handle_external_desired_state_change(self.DeviceState.DISARMED)
+        await self.handle_async_state_change_started(self.DeviceState.DISARMED)
 
         await self._send_action(
             device_type=DeviceType.PARTITION,

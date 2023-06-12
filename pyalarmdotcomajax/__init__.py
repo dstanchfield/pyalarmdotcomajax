@@ -6,16 +6,18 @@ import contextlib
 import json
 import logging
 import re
-from collections.abc import Callable, Coroutine
+import uuid
+from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
 from datetime import datetime, timedelta
+from functools import partial
 from typing import Any, TypedDict
 
 import aiohttp
 from bs4 import BeautifulSoup
 
 from pyalarmdotcomajax import const as c
-from pyalarmdotcomajax.const import OtpType
+from pyalarmdotcomajax.const import CallbackEventType, OtpType
 from pyalarmdotcomajax.devices import (
     BaseDevice,
     DeviceTypeSpecificData,
@@ -46,7 +48,7 @@ from pyalarmdotcomajax.extensions import (
 )
 from pyalarmdotcomajax.websockets.client import WebSocketClient, WebSocketState
 
-__version__ = "0.5.4-alpha.1"
+__version__ = "0.5.4-alpha.2"
 
 log = logging.getLogger(__name__)
 
@@ -170,6 +172,11 @@ class AlarmController:
         self.raw_system: dict = {}
         self.raw_image_sensors: dict = {}
         self.raw_recent_images: dict = {}
+
+        #
+        # EXTERNAL EVENT LISTENERS
+        #
+        self._state_update_listeners: dict[str, Callable[[str], Awaitable]] = {}
 
     #
     #
@@ -385,6 +392,34 @@ class AlarmController:
                 f" {self._ajax_headers}"
             )
             raise UnexpectedResponse
+
+    #
+    # NOTIFICATION FUNCTIONS
+    #
+
+    async def register_event_listener(self, event_listener: Callable[[str], Awaitable]) -> Callable:
+        """Register a callback function to be called when an event is received."""
+
+        event_listener_id = str(uuid.uuid4())
+        self._state_update_listeners.update({event_listener_id: event_listener})
+
+        return partial(self.unregister_event_listener, event_listener_id)
+
+    async def unregister_event_listener(self, event_listener_id: str) -> None:
+        """Register a callback function to be called when an event is received."""
+
+        self._state_update_listeners.pop(event_listener_id, None)
+
+    async def send_event(self, event_type: CallbackEventType, device_id: str) -> None:
+        """Send event to all registered listeners."""
+
+        # Trace logging for @catellie
+        log.debug("Sending event %s for device %s", event_type, device_id)
+
+        if event_type is CallbackEventType.STATE_UPDATED:
+            for event_listener in self._state_update_listeners.values():
+                log.debug("Sending event to %s", event_listener)
+                await event_listener(device_id)
 
     #
     # SESSION FUNCTIONS
@@ -832,6 +867,7 @@ class AlarmController:
                 if (extension_controller := device_extension_results.get("controller"))
                 else None
             ),
+            state_update_callback=self.send_event,
             trouble_conditions=self._trouble_conditions.get(entity_id),
             partition_id=self._partition_map.get(entity_id),
             settings=device_extension_results.get("settings"),

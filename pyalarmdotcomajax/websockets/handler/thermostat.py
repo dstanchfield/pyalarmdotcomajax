@@ -37,7 +37,7 @@ class ThermostatWebSocketHandler(BaseWebSocketHandler):
             case PropertyChangeMessage():
                 match message.property:
                     case PropertyChangeType.CoolSetPoint | PropertyChangeType.HeatSetPoint:
-                        await message.device.async_handle_external_attribute_change(
+                        await message.device.handle_async_attribute_change(
                             {
                                 (
                                     message.device.ATTRIB_HEAT_SETPOINT
@@ -53,24 +53,24 @@ class ThermostatWebSocketHandler(BaseWebSocketHandler):
                         )
 
                     case PropertyChangeType.AmbientTemperature:
-                        await message.device.async_handle_external_attribute_change(
+                        await message.device.handle_async_attribute_change(
                             {message.device.ATTRIB_AMBIENT_TEMP: message.value / 100},
                         )
 
             case EventMessage():
                 match message.event_type:
                     case EventType.ThermostatOffset:
-                        await message.device.async_handle_external_attribute_change(
+                        await message.device.handle_async_attribute_change(
                             {message.device.ATTRIB_SETPOINT_OFFSET: message.value},
                         )
 
                     case EventType.ThermostatModeChanged:
-                        await message.device.async_handle_external_dual_state_change(
+                        await message.device.handle_async_state_change_finished(
                             message.device.DeviceState(message.value + 1)
                         )
 
                     case EventType.ThermostatFanModeChanged:
-                        await message.device.async_handle_external_attribute_change(
+                        await message.device.handle_async_attribute_change(
                             {
                                 message.device.ATTRIB_FAN_MODE: message.value,
                                 message.device.ATTRIB_DESIRED_FAN_MODE: message.value,

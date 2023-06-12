@@ -48,16 +48,16 @@ class LightWebSocketHandler(BaseWebSocketHandler):
                         # RGBW light not currently supported by library.
                         pass
             case StatusChangeMessage():
-                await message.device.async_handle_external_dual_state_change(self.STATE_MAP[message.new_state])
+                await message.device.handle_async_state_change_finished(self.STATE_MAP[message.new_state])
             case EventMessage():
                 match message.event_type:
                     case EventType.SwitchLevelChanged:
                         if message.value:
-                            await message.device.async_handle_external_attribute_change(
+                            await message.device.handle_async_attribute_change(
                                 {message.device.ATTRIB_LIGHT_LEVEL: int(message.value)}
                             )
                     case EventType.LightTurnedOff | EventType.LightTurnedOn:
-                        await message.device.async_handle_external_dual_state_change(
+                        await message.device.handle_async_state_change_finished(
                             self.EVENT_STATE_MAP[message.event_type]
                         )
                     case _:

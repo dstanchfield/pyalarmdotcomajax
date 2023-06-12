@@ -36,11 +36,11 @@ class LockWebSocketHandler(BaseWebSocketHandler):
 
         match message:
             case StatusChangeMessage():
-                await message.device.async_handle_external_dual_state_change(message.new_state)
+                await message.device.handle_async_state_change_finished(message.new_state)
             case EventMessage():
                 match message.event_type:
                     case EventType.DoorLocked | EventType.DoorUnlocked:
-                        await message.device.async_handle_external_dual_state_change(
+                        await message.device.handle_async_state_change_finished(
                             self.EVENT_STATE_MAP[message.event_type]
                         )
                     case _:

@@ -56,7 +56,7 @@ class SensorWebSocketHandler(BaseWebSocketHandler):
             case EventMessage():
                 match message.event_type:
                     case EventType.Closed | EventType.Opened:
-                        await message.device.async_handle_external_dual_state_change(
+                        await message.device.handle_async_state_change_finished(
                             self.get_state_from_event_type(message)
                         )
 
@@ -65,10 +65,10 @@ class SensorWebSocketHandler(BaseWebSocketHandler):
                         lock = asyncio.Lock()
 
                         async with lock:
-                            await message.device.async_handle_external_dual_state_change(Sensor.DeviceState.OPEN)
+                            await message.device.handle_async_state_change_finished(Sensor.DeviceState.OPEN)
 
                         async with lock:
-                            await message.device.async_handle_external_dual_state_change(Sensor.DeviceState.CLOSED)
+                            await message.device.handle_async_state_change_finished(Sensor.DeviceState.CLOSED)
                     case _:
                         log.debug(
                             f"Support for event {message.event_type} ({message.event_type_id}) not yet implemented"

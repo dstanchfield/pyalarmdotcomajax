@@ -31,7 +31,7 @@ class GarageDoor(BaseDevice):
     async def async_open(self) -> None:
         """Send open command."""
 
-        await self.async_handle_external_desired_state_change(self.DeviceState.OPEN)
+        await self.handle_async_state_change_started(self.DeviceState.OPEN)
 
         await self._send_action(
             device_type=DeviceType.GARAGE_DOOR,
@@ -42,7 +42,7 @@ class GarageDoor(BaseDevice):
     async def async_close(self) -> None:
         """Send close command."""
 
-        await self.async_handle_external_desired_state_change(self.DeviceState.CLOSED)
+        await self.handle_async_state_change_started(self.DeviceState.CLOSED)
 
         await self._send_action(
             device_type=DeviceType.GARAGE_DOOR,
