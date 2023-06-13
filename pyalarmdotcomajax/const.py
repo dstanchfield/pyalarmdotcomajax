@@ -37,3 +37,8 @@ class CallbackEventType(Enum):
     """Event types."""
 
     STATE_UPDATED = "state_updated"
+    WEBSOCKET_CONNECTION = "websocket_connection"
+
+
+CB_DATA_DEVICE_ID = "device_id"
+CB_DATA_WEBSOCKET_STATE = "websocket_state"

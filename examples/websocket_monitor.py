@@ -8,7 +8,7 @@ import sys
 import aiohttp
 
 from pyalarmdotcomajax import AlarmController
-from pyalarmdotcomajax.const import OtpType
+from pyalarmdotcomajax.const import CallbackEventType, OtpType
 from pyalarmdotcomajax.exceptions import ConfigureTwoFactorAuthentication, OtpRequired
 from pyalarmdotcomajax.exceptions import (
     AuthenticationFailed,
@@ -68,10 +68,12 @@ async def main() -> None:
         await alarm.async_update()
 
         #
-        # OPEN WEBSOCKET CONNECTION
+        # INITIALIZE WEBSOCKET CONNECTION
         #
 
-        def ws_state_handler(state: WebSocketState) -> None:
+        alarm.register_event_listener(CallbackEventType.STATE_UPDATED, ws_state_handler)
+
+        def ws_state_handler(event_data: WebSocketState) -> None:
             """Handle websocket connection state changes."""
 
             print(f"Websocket state changed to: {state.name}")
@@ -80,7 +82,7 @@ async def main() -> None:
 
         try:
             # Keeps sessions alive and keeps event loop active.
-            await alarm.start_session_nudger()
+            await alarm.start_keep_alive()
 
             # Keep event loop alive until cancelled.
             while True:
@@ -93,7 +95,7 @@ async def main() -> None:
             # Close connection when cancelled.
             alarm.stop_websocket()
 
-            await alarm.stop_session_nudger()
+            await alarm.stop_keep_alive()
 
 
 async def handle_otp_workflow(alarm: AlarmController, enabled_2fa_methods: list[OtpType]) -> None:

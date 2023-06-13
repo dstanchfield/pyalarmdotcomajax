@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
 from datetime import datetime, timedelta
 from functools import partial
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -25,7 +25,6 @@ from pyalarmdotcomajax.devices import (
 )
 from pyalarmdotcomajax.devices.partition import Partition
 from pyalarmdotcomajax.devices.registry import (
-    AllDevices_t,
     AttributeRegistry,
     DeviceRegistry,
     DeviceType,
@@ -46,7 +45,7 @@ from pyalarmdotcomajax.extensions import (
     ControllerExtensions_t,
     ExtendedProperties,
 )
-from pyalarmdotcomajax.websockets.client import WebSocketClient, WebSocketState
+from pyalarmdotcomajax.websockets.client import WebSocketClient
 
 __version__ = "0.5.4-alpha.2"
 
@@ -106,7 +105,7 @@ class AlarmController:
     KEEP_ALIVE_URL_PARAM_TEMPLATE = "?timestamp={}"
     KEEP_ALIVE_RENEW_SESSION_URL_TEMPLATE = "{}web/api/identities/{}/reloadContext"
     KEEP_ALIVE_SIGNAL_INTERVAL_S = 60
-    SESSION_REFRESH_DEFAULT_INTERVAL_MS = 780000  # 13 minutes. Sessions expire at 15.
+    SESSION_REFRESH_DEFAULT_INTERVAL_MS = 600000  # 10 minutes. Sessions expire at 15.
 
     # LOGIN & SESSION: END
 
@@ -150,13 +149,6 @@ class AlarmController:
         self.devices: DeviceRegistry = DeviceRegistry()
 
         #
-        # WEBSOCKET ATTRIBUTES
-        #
-
-        self._ws_state_callback: Callable[[WebSocketState], None] | None = None
-        self._websocket: WebSocketClient | None = None
-
-        #
         # SESSION ATTRIBUTES
         #
 
@@ -164,6 +156,7 @@ class AlarmController:
         self._keep_alive_url: str = self.KEEP_ALIVE_DEFAULT_URL
         self._last_session_refresh: datetime = datetime.now()
         self._session_timer: SessionTimer | None = None
+        self._is_logged_in: bool = False
 
         #
         # CLI ATTRIBUTES
@@ -176,7 +169,16 @@ class AlarmController:
         #
         # EXTERNAL EVENT LISTENERS
         #
-        self._state_update_listeners: dict[str, Callable[[str], Awaitable]] = {}
+        self._event_listeners: dict[
+            str, tuple[Callable[[CallbackEventType, dict], Awaitable], list[CallbackEventType]]
+        ] = {}  # {listener_uuid: (callback_fn, [event_types])}
+
+        #
+        # WEBSOCKET ATTRIBUTES
+        #
+
+        self._websocket = WebSocketClient(self._websession, self._ajax_headers, self.devices)
+        self._kill_websocket_listener: Callable | None = None
 
     #
     #
@@ -247,7 +249,7 @@ class AlarmController:
         # GET CORE DEVICE ATTRIBUTES
         #
 
-        device_instances: dict[str, AllDevices_t] = {}
+        device_instances: dict[str, BaseDevice] = {}
         raw_devices: list[dict] = await self._async_get_system(self._active_system_id)
         raw_devices.extend(await self._async_get_system_devices(self._active_system_id))
 
@@ -285,7 +287,7 @@ class AlarmController:
             for partition_raw in raw_devices
             if partition_raw["type"] == AttributeRegistry.get_relationship_id_from_devicetype(DeviceType.PARTITION)
         ]:
-            partition_instance: AllDevices_t = await self._async_update__build_device(
+            partition_instance: BaseDevice = await self._async_update__build_device(
                 partition_raw, device_type_specific_data, extension_results
             )
 
@@ -303,7 +305,7 @@ class AlarmController:
 
             for device_raw in raw_devices:
                 try:
-                    device_instance: AllDevices_t = await self._async_update__build_device(
+                    device_instance: BaseDevice = await self._async_update__build_device(
                         device_raw, device_type_specific_data, extension_results
                     )
 
@@ -397,29 +399,31 @@ class AlarmController:
     # NOTIFICATION FUNCTIONS
     #
 
-    async def register_event_listener(self, event_listener: Callable[[str], Awaitable]) -> Callable:
+    async def register_event_listener(
+        self, event_types: list[CallbackEventType], event_listener: Callable[[CallbackEventType, dict], Awaitable]
+    ) -> Callable:
         """Register a callback function to be called when an event is received."""
 
         event_listener_id = str(uuid.uuid4())
-        self._state_update_listeners.update({event_listener_id: event_listener})
+        self._event_listeners.update({event_listener_id: (event_listener, event_types)})
 
         return partial(self.unregister_event_listener, event_listener_id)
 
     async def unregister_event_listener(self, event_listener_id: str) -> None:
         """Register a callback function to be called when an event is received."""
 
-        self._state_update_listeners.pop(event_listener_id, None)
+        self._event_listeners.pop(event_listener_id, None)
 
-    async def send_event(self, event_type: CallbackEventType, device_id: str) -> None:
+    async def send_event(self, event_type: CallbackEventType, event_data: dict) -> None:
         """Send event to all registered listeners."""
 
         # Trace logging for @catellie
-        log.debug("Sending event %s for device %s", event_type, device_id)
+        log.debug("Sending event %s with data %s", event_type, event_data)
 
-        if event_type is CallbackEventType.STATE_UPDATED:
-            for event_listener in self._state_update_listeners.values():
+        for event_listener, event_types in self._event_listeners.values():
+            if event_type in event_types:
                 log.debug("Sending event to %s", event_listener)
-                await event_listener(device_id)
+                await event_listener(event_type, event_data)
 
     #
     # SESSION FUNCTIONS
@@ -430,20 +434,38 @@ class AlarmController:
 
         await self._websession.close()
 
-    async def start_session_nudger(self) -> None:
+    async def _start_keep_alive(self) -> None:
         """Start task to nudge user sessions to keep from timing out."""
 
         self._session_timer = SessionTimer(self.keep_alive, self.KEEP_ALIVE_SIGNAL_INTERVAL_S)
         await self._session_timer.start()
 
-    async def stop_session_nudger(self) -> None:
-        """Stop session nudger."""
+    async def _stop_keep_alive(self) -> None:
+        """Stop keep alive."""
 
         if self._session_timer:
             await self._session_timer.stop()
 
+    async def _handle_logged_in(self) -> None:
+        """Handle successful login."""
+
+        log.info("Successfully logged in to Alarm.com. Opening WebSocket connection and starting keep alive.")
+
+        asyncio.gather(self._start_keep_alive(), self._start_websocket())
+
+        self._is_logged_in = True
+
+    async def _handle_logged_out(self) -> None:
+        """Handle session timeout / user logout."""
+
+        log.warning("Session timeout detected. Closing connections to Alarm.com...")
+
+        self._is_logged_in = False
+
+        asyncio.gather(self._stop_keep_alive(), self._stop_websocket())
+
     async def keep_alive(self) -> None:
-        """Keep session alive. Handle if not (optionally).
+        """Keep session alive. Raise SessionTimeout if dead.
 
         Should be called once per minute to keep session alive.
         """
@@ -464,31 +486,37 @@ class AlarmController:
         log.debug(debug_message)
 
         try:
-            if await self.is_logged_in(throw=True) and reload_context_now:
-                await self._reload_session_context()
+            await self.check_session_active()
         except SessionTimeout:
-            log.info("User session expired. Logging back in.")
-            await self.async_login()
+            await self._handle_logged_out()
+            log.exception("User session expired.")
+            raise
+
+        if reload_context_now:
+            await self._reload_session_context()
 
     #
     # WEBSOCKET FUNCTIONS
     #
 
-    def start_websocket(self, ws_state_callback: Callable[[WebSocketState], None] | None = None) -> None:
-        """Construct and return a websocket client."""
+    async def _start_websocket(self) -> None:
+        """Start websocket client."""
 
-        self._ws_state_callback = ws_state_callback
+        await self._websocket.start()
 
-        self._websocket = WebSocketClient(
-            self._websession, self._ajax_headers, self.devices, self._ws_state_callback
+        self._kill_websocket_listener = await self._websocket.register_connection_event_listener(
+            partial(self.send_event, CallbackEventType.WEBSOCKET_CONNECTION)
         )
-        self._websocket.start()
 
-    def stop_websocket(self) -> None:
+    async def _stop_websocket(self) -> None:
         """Close websession and websocket to UniFi."""
         log.info("Closing WebSocket connection.")
+
+        if self._kill_websocket_listener:
+            self._kill_websocket_listener()
+
         if self._websocket:
-            self._websocket.stop()
+            await self._websocket.stop()
 
     #
     # AUTHENTICATION FUNCTIONS
@@ -582,6 +610,8 @@ class AlarmController:
 
         log.debug("Logged in to Alarm.com.")
 
+        await self._start_keep_alive()
+
         #
         # Step 3: Get user's profile.
         #
@@ -674,6 +704,8 @@ class AlarmController:
             or not enabled_2fa_methods
         ):
             # 2FA is disabled, we can skip 2FA altogether.
+            await self._handle_logged_in()
+
             return
 
         log.info(f"Requires two-factor authentication. Enabled methods are {enabled_2fa_methods}")
@@ -739,12 +771,14 @@ class AlarmController:
         # Submit device name for "remember me" function.
         if suggested_device_name := json_rsp.get("value", {}).get("deviceName"):
             try:
-                log.debug("Registering device...")
+                device_name_obj = {"deviceName": device_name if device_name else suggested_device_name}
+
+                log.debug(f'Registering device as "{device_name_obj}"...')
 
                 async with self._websession.post(
                     url=self.LOGIN_2FA_TRUST_URL_TEMPLATE.format(c.URL_BASE, self._user_id),
                     headers=self._ajax_headers,
-                    json={"deviceName": device_name if device_name else suggested_device_name},
+                    json=device_name_obj,
                     raise_for_status=True,
                 ) as resp:
                     json_rsp = await resp.json()
@@ -755,16 +789,25 @@ class AlarmController:
             log.debug("Registered device.")
 
         # Save 2FA cookie value.
-        for cookie in self._websession.cookie_jar:
-            if cookie.key == self.LOGIN_TWO_FACTOR_COOKIE_NAME:
-                log.debug("Found two-factor authentication cookie: %s", cookie.value)
-                self._two_factor_cookie = {"twoFactorAuthenticationId": cookie.value} if cookie.value else {}
-                return
+        self._two_factor_cookie = {}
+        try:
+            self._two_factor_cookie = {
+                "twoFactorAuthenticationId": {cookie.key: cookie.value for cookie in self._websession.cookie_jar}[
+                    self.LOGIN_TWO_FACTOR_COOKIE_NAME
+                ]
+            }
+            log.debug("Found two-factor authentication cookie: %s", self._two_factor_cookie)
+        except KeyError as err:
+            await self._handle_logged_out()
+            raise UnexpectedResponse("Failed to find two-factor authentication cookie.") from err
 
-        raise UnexpectedResponse("Failed to find two-factor authentication cookie.")
+        await self._handle_logged_in()
 
-    async def is_logged_in(self, throw: bool = False) -> bool:
-        """Check if we are still logged in."""
+    async def check_session_active(self) -> Literal[True]:
+        """Check whether session is active / user is logged in.
+
+        This will also return true if the user passed username/password verification in but still has not submitted a required OTP.
+        """
 
         url = f"{c.URL_BASE[:-1]}{self._keep_alive_url}{self.KEEP_ALIVE_URL_PARAM_TEMPLATE.format(int(round(datetime.now().timestamp())))}"
 
@@ -782,10 +825,7 @@ class AlarmController:
             if err.status == 403:
                 log.debug("Session expired.")
 
-                if throw:
-                    raise SessionTimeout
-
-                return False
+                raise SessionTimeout
 
             raise UnexpectedResponse(f"Failed to send keep alive signal. Response: {text_rsp}") from err
 
@@ -820,14 +860,14 @@ class AlarmController:
         raw_device: dict,
         device_type_specific_data: dict[str, DeviceTypeSpecificData],
         extension_results: dict[str, ExtensionResults],
-    ) -> AllDevices_t:
+    ) -> BaseDevice:
         """Build device instance."""
 
         #
         # DETERMINE DEVICE'S PYALARMDOTCOMAJAX PYTHON CLASS & DEVICETYPE
         #
         device_type: DeviceType = AttributeRegistry.get_devicetype_from_relationship_id(raw_device["type"])
-        device_class: type[AllDevices_t] = AttributeRegistry.get_class(device_type)
+        device_class: type[BaseDevice] = AttributeRegistry.get_class(device_type)
 
         #
         # SKIP UNSUPPORTED DEVICE TYPES
@@ -1216,7 +1256,9 @@ class AlarmController:
                     )
                     raise UnexpectedResponse(error_msg)
 
-                if not self.is_logged_in():
+                try:
+                    await self.check_session_active()
+                except SessionTimeout:
                     log.info(
                         "Error fetching data from Alarm.com. Got 403 status"
                         f" when requesting {request_name}. Trying to"
