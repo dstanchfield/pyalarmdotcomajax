@@ -106,7 +106,7 @@ class AlarmController:
     KEEP_ALIVE_URL_PARAM_TEMPLATE = "?timestamp={}"
     KEEP_ALIVE_RENEW_SESSION_URL_TEMPLATE = "{}web/api/identities/{}/reloadContext"
     KEEP_ALIVE_SIGNAL_INTERVAL_S = 60
-    SESSION_REFRESH_DEFAULT_INTERVAL_MS = 780000  # 13 minutes. Sessions expire at 15.
+    SESSION_REFRESH_DEFAULT_INTERVAL_MS = 600000  # 10 minutes. Sessions expire at 15.
 
     # LOGIN & SESSION: END
 
@@ -809,6 +809,9 @@ class AlarmController:
             data=json.dumps({"included": [], "meta": {"transformer_version": "1.1"}}),
         ) as resp:
             json_rsp = await resp.json()
+
+            if resp.status == 403:
+                raise SessionTimeout(f"Session timed out while reloading session context. Response: {json_rsp}")
 
             if resp.status >= 400:
                 raise UnexpectedResponse(f"Failed to reload session context. Response: {json_rsp}")
