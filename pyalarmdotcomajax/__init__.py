@@ -48,7 +48,7 @@ from pyalarmdotcomajax.extensions import (
 )
 from pyalarmdotcomajax.websockets.client import WebSocketClient, WebSocketState
 
-__version__ = "0.5.4-alpha.2"
+__version__ = "0.5.4-alpha.3"
 
 log = logging.getLogger(__name__)
 
@@ -1216,7 +1216,7 @@ class AlarmController:
                     )
                     raise UnexpectedResponse(error_msg)
 
-                if not self.is_logged_in():
+                if not await self.is_logged_in():
                     log.info(
                         "Error fetching data from Alarm.com. Got 403 status"
                         f" when requesting {request_name}. Trying to"
