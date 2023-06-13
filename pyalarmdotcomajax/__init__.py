@@ -47,7 +47,7 @@ from pyalarmdotcomajax.extensions import (
 )
 from pyalarmdotcomajax.websockets.client import WebSocketClient
 
-__version__ = "0.5.4-alpha.2"
+__version__ = "0.5.4-alpha.3"
 
 log = logging.getLogger(__name__)
 
@@ -849,6 +849,9 @@ class AlarmController:
             data=json.dumps({"included": [], "meta": {"transformer_version": "1.1"}}),
         ) as resp:
             json_rsp = await resp.json()
+
+            if resp.status == 403:
+                raise SessionTimeout(f"Session timed out while reloading session context. Response: {json_rsp}")
 
             if resp.status >= 400:
                 raise UnexpectedResponse(f"Failed to reload session context. Response: {json_rsp}")
