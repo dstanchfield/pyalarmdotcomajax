@@ -35,6 +35,9 @@
                 "python.analysis.autoSearchPaths": false,
                 "python.analysis.extraPaths": ["/workspaces/pyalarmdotcomajax"],
                 "python.formatting.provider": "black",
+                "python.linting.mypyArgs": [
+                    "--config-file=${workspaceFolder}/pyproject.toml"
+                ],
                 "python.linting.enabled": true,
                 "python.languageServer": "Pylance",
                 "python.testing.pytestEnabled": true,

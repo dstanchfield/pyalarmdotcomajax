@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TypedDict
+from typing import TypedDict, TypeVar
 
-from pyalarmdotcomajax.devices import DeviceType
+from pyalarmdotcomajax.devices import BaseDevice, DeviceType
 from pyalarmdotcomajax.devices.camera import Camera
 from pyalarmdotcomajax.devices.garage_door import GarageDoor
 from pyalarmdotcomajax.devices.gate import Gate
@@ -22,19 +22,7 @@ from pyalarmdotcomajax.helpers import classproperty
 
 log = logging.getLogger(__name__)
 
-AllDevices_t = (
-    Camera
-    | GarageDoor
-    | Gate
-    | ImageSensor
-    | Light
-    | Lock
-    | Partition
-    | Sensor
-    | System
-    | Thermostat
-    | WaterSensor
-)
+AdcDevices = TypeVar("AdcDevices", bound=BaseDevice)
 
 AllDeviceTypes_t = (
     type[Camera]
@@ -50,49 +38,6 @@ AllDeviceTypes_t = (
     | type[WaterSensor]
 )
 
-# AllCommands_t = (
-#     Camera.Command
-#     | GarageDoor.Command
-#     | Gate.Command
-#     | ImageSensor.Command
-#     | Light.Command
-#     | Lock.Command
-#     | Partition.Command
-#     | Sensor.Command
-#     | System.Command
-#     | Thermostat.Command
-#     | WaterSensor.Command
-# )
-
-
-AllDevicesLists_t = (
-    list[Camera]
-    | list[GarageDoor]
-    | list[Gate]
-    | list[ImageSensor]
-    | list[Light]
-    | list[Lock]
-    | list[Partition]
-    | list[Sensor]
-    | list[System]
-    | list[Thermostat]
-    | list[WaterSensor]
-)
-
-AllDevicesDicts_t = (
-    dict[str, Camera]
-    | dict[str, GarageDoor]
-    | dict[str, Gate]
-    | dict[str, ImageSensor]
-    | dict[str, Light]
-    | dict[str, Lock]
-    | dict[str, Partition]
-    | dict[str, Sensor]
-    | dict[str, System]
-    | dict[str, Thermostat]
-    | dict[str, WaterSensor]
-)
-
 
 class DeviceTypeEndpoints(TypedDict, total=False):
     """Stores endpoints for a device type."""
@@ -105,7 +50,7 @@ class AttributeRegistryEntry(TypedDict, total=False):
     """Stores information about a device type."""
 
     endpoints: DeviceTypeEndpoints
-    class_: AllDeviceTypes_t
+    class_: type[BaseDevice]
     supported: bool
     rel_id: str
     device_registry_property: str
@@ -115,18 +60,18 @@ class AttributeRegistryEntry(TypedDict, total=False):
 class DeviceRegistry:
     """Stores devices by type."""
 
-    _devices: dict[str, AllDevices_t] = field(default_factory=dict)
+    _devices: dict[str, BaseDevice] = field(default_factory=dict)
 
     ############
     ## PUBLIC ##
     ############
 
     @property
-    def all(self) -> dict[str, AllDevices_t]:
+    def all(self) -> dict[str, BaseDevice]:
         """Return devices."""
         return self._devices
 
-    def get(self, device_id: str) -> AllDevices_t:
+    def get(self, device_id: str) -> BaseDevice:
         """Get device by id."""
 
         try:
@@ -134,7 +79,7 @@ class DeviceRegistry:
         except KeyError as err:
             raise UnkonwnDevice(device_id) from err
 
-    def update(self, payload: dict[str, AllDevices_t], purge: bool = False) -> None:
+    def update(self, payload: dict[str, BaseDevice], purge: bool = False) -> None:
         """Store device or list of devices."""
 
         if purge:
@@ -359,7 +304,7 @@ class AttributeRegistry:
             raise UnsupportedDeviceType(device_type) from err
 
     @staticmethod
-    def get_class(device_type: DeviceType) -> type[AllDevices_t]:
+    def get_class(device_type: DeviceType) -> type[BaseDevice]:
         """Return primary endpoint for device type."""
 
         try:

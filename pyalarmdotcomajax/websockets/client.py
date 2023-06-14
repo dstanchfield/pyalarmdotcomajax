@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from collections.abc import Callable
@@ -25,6 +26,7 @@ from pyalarmdotcomajax.devices.water_sensor import WaterSensor
 from pyalarmdotcomajax.exceptions import (
     AuthenticationFailed,
     UnexpectedResponse,
+    UnkonwnDevice,
 )
 from pyalarmdotcomajax.websockets.handler.garage_door import GarageDoorWebSocketHandler
 from pyalarmdotcomajax.websockets.handler.gate import GateWebSocketHandler
@@ -173,7 +175,8 @@ class WebSocketClient:
             f"{json.dumps(raw_message, indent=4)}"
         )
 
-        message = process_raw_message(raw_message, self._device_registry)
+        with contextlib.suppress(UnkonwnDevice):
+            message = process_raw_message(raw_message, self._device_registry)
 
         if type(message) is MonitoringEventMessage:
             log.info(

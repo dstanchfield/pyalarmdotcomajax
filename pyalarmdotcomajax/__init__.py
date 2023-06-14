@@ -25,7 +25,6 @@ from pyalarmdotcomajax.devices import (
 )
 from pyalarmdotcomajax.devices.partition import Partition
 from pyalarmdotcomajax.devices.registry import (
-    AllDevices_t,
     AttributeRegistry,
     DeviceRegistry,
     DeviceType,
@@ -48,7 +47,7 @@ from pyalarmdotcomajax.extensions import (
 )
 from pyalarmdotcomajax.websockets.client import WebSocketClient, WebSocketState
 
-__version__ = "0.5.4-alpha.3"
+__version__ = "0.5.4-alpha.4"
 
 log = logging.getLogger(__name__)
 
@@ -247,7 +246,7 @@ class AlarmController:
         # GET CORE DEVICE ATTRIBUTES
         #
 
-        device_instances: dict[str, AllDevices_t] = {}
+        device_instances: dict[str, BaseDevice] = {}
         raw_devices: list[dict] = await self._async_get_system(self._active_system_id)
         raw_devices.extend(await self._async_get_system_devices(self._active_system_id))
 
@@ -285,7 +284,7 @@ class AlarmController:
             for partition_raw in raw_devices
             if partition_raw["type"] == AttributeRegistry.get_relationship_id_from_devicetype(DeviceType.PARTITION)
         ]:
-            partition_instance: AllDevices_t = await self._async_update__build_device(
+            partition_instance: BaseDevice = await self._async_update__build_device(
                 partition_raw, device_type_specific_data, extension_results
             )
 
@@ -303,7 +302,7 @@ class AlarmController:
 
             for device_raw in raw_devices:
                 try:
-                    device_instance: AllDevices_t = await self._async_update__build_device(
+                    device_instance: BaseDevice = await self._async_update__build_device(
                         device_raw, device_type_specific_data, extension_results
                     )
 
@@ -823,14 +822,14 @@ class AlarmController:
         raw_device: dict,
         device_type_specific_data: dict[str, DeviceTypeSpecificData],
         extension_results: dict[str, ExtensionResults],
-    ) -> AllDevices_t:
+    ) -> BaseDevice:
         """Build device instance."""
 
         #
         # DETERMINE DEVICE'S PYALARMDOTCOMAJAX PYTHON CLASS & DEVICETYPE
         #
         device_type: DeviceType = AttributeRegistry.get_devicetype_from_relationship_id(raw_device["type"])
-        device_class: type[AllDevices_t] = AttributeRegistry.get_class(device_type)
+        device_class: type[BaseDevice] = AttributeRegistry.get_class(device_type)
 
         #
         # SKIP UNSUPPORTED DEVICE TYPES

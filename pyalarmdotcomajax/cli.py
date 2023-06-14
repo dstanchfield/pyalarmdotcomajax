@@ -23,10 +23,10 @@ from termcolor import colored, cprint
 
 import pyalarmdotcomajax
 from pyalarmdotcomajax.const import OtpType
-from pyalarmdotcomajax.devices.registry import AllDevices_t, AttributeRegistry
+from pyalarmdotcomajax.devices.registry import AttributeRegistry, BaseDevice
 
 from . import AlarmController
-from .devices import BaseDevice, DeviceType
+from .devices import DeviceType
 from .devices.sensor import Sensor
 from .exceptions import (
     AuthenticationFailed,
@@ -459,7 +459,7 @@ def _human_output(alarm: AlarmController) -> dict:
     output = {}
 
     for device_type in AttributeRegistry.supported_device_types:  # pylint: ignore=not-an-iterable
-        devices: dict[str, AllDevices_t] = getattr(alarm.devices, AttributeRegistry.get_storage_name(device_type))
+        devices: dict[str, BaseDevice] = getattr(alarm.devices, AttributeRegistry.get_storage_name(device_type))
         device_type_output: str = ""
         if len(devices) == 0:
             device_type_output += "\n(none found)\n"
@@ -473,7 +473,7 @@ def _human_output(alarm: AlarmController) -> dict:
 
 
 def _print_element_tearsheet(
-    element: AllDevices_t,
+    element: BaseDevice,
 ) -> str:
     output_str: str = ""
 
