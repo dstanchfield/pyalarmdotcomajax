@@ -22,8 +22,8 @@ import aiohttp
 from termcolor import colored, cprint
 
 import pyalarmdotcomajax
-from pyalarmdotcomajax.const import OtpType
-from pyalarmdotcomajax.devices.registry import AttributeRegistry, BaseDevice
+from pyalarmdotcomajax.const import CB_DATA_WEBSOCKET_STATE, CallbackEventType, OtpType
+from pyalarmdotcomajax.devices.registry import AttributeRegistry
 
 from . import AlarmController
 from .devices import BaseDevice, DeviceType
@@ -424,18 +424,15 @@ async def cli() -> None:
 async def _async_stream_realtime(alarm: AlarmController) -> None:
     """Stream real-time updates via WebSockets."""
 
-    # Keep user session alive.
-    await alarm.start_keep_alive()
-
-    def ws_state_handler(state: WebSocketState) -> None:
+    async def ws_state_handler(event_type: CallbackEventType, event_data: dict[str, WebSocketState]) -> None:
         """Handle websocket connection state changes."""
 
-        if state in [WebSocketState.DISCONNECTED]:
+        if event_data.get(CB_DATA_WEBSOCKET_STATE) in [WebSocketState.DISCONNECTED]:
             # asyncio.create_task(alarm.async_connect())
             cprint("Lost streaming connection to Alarm.com.", "red")
             sys.exit()
 
-    alarm.start_websocket(ws_state_handler)
+    await alarm.register_event_listener([CallbackEventType.WEBSOCKET_CONNECTION], ws_state_handler)
 
     try:
         # Keep event loop alive until cancelled.
@@ -450,7 +447,7 @@ async def _async_stream_realtime(alarm: AlarmController) -> None:
 
         await alarm.stop_keep_alive()
 
-        alarm.stop_websocket()
+        await alarm.stop_websocket()
 
 
 def _human_output(alarm: AlarmController) -> dict:

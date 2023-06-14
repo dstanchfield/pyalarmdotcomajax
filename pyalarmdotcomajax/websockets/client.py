@@ -18,7 +18,6 @@ from pyalarmdotcomajax import const as c
 from pyalarmdotcomajax.const import CB_DATA_WEBSOCKET_STATE
 from pyalarmdotcomajax.devices.garage_door import GarageDoor
 from pyalarmdotcomajax.devices.gate import Gate
-from pyalarmdotcomajax.devices.light import Light
 from pyalarmdotcomajax.devices.lock import Lock
 from pyalarmdotcomajax.devices.partition import Partition
 from pyalarmdotcomajax.devices.registry import DeviceRegistry
@@ -201,7 +200,7 @@ class WebSocketClient:
                 f" [{message.device.name} ({message.device.id_})]"
             )
         else:
-            match message.device:
+            match type(message.device):
                 case Light():
                     await LightWebSocketHandler().process_message(message)
                 case Sensor():

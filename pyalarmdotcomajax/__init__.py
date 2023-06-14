@@ -233,6 +233,7 @@ class AlarmController:
             NotAuthorized: User doesn't have permission to perform the action requested.
             AuthenticationFailed: User could not be logged in, likely due to invalid credentials.
             UnsupportedDeviceType: Device type is not supported by this library.
+            SessionTimeout: Session has expired and user needs to log in again.
         """
 
         log.debug("Calling update on Alarm.com")
@@ -440,7 +441,7 @@ class AlarmController:
         self._session_timer = SessionTimer(self.keep_alive, self.KEEP_ALIVE_SIGNAL_INTERVAL_S)
         await self._session_timer.start()
 
-    async def _stop_keep_alive(self) -> None:
+    async def stop_keep_alive(self) -> None:
         """Stop keep alive."""
 
         if self._session_timer:
@@ -462,7 +463,7 @@ class AlarmController:
 
         self._is_logged_in = False
 
-        asyncio.gather(self._stop_keep_alive(), self._stop_websocket())
+        asyncio.gather(self.stop_keep_alive(), self.stop_websocket())
 
     async def keep_alive(self) -> None:
         """Keep session alive. Raise SessionTimeout if dead.
@@ -508,7 +509,7 @@ class AlarmController:
             partial(self.send_event, CallbackEventType.WEBSOCKET_CONNECTION)
         )
 
-    async def _stop_websocket(self) -> None:
+    async def stop_websocket(self) -> None:
         """Close websession and websocket to UniFi."""
         log.info("Closing WebSocket connection.")
 
