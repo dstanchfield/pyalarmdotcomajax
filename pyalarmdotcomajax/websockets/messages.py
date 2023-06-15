@@ -55,8 +55,12 @@ def process_raw_message(message: dict, device_registry: DeviceRegistry) -> WebSo
             # State Change
             log.debug("WebSocket Message Type: State Change")
             return StatusChangeMessage(message, device)
-    except KeyError:
+    except KeyError as err:
         log.exception(f"Failed to parse websocket message: {message}")
+        raise UnsupportedWebSocketMessage(message) from err
+    except UnboundLocalError as err:
+        log.exception(f"Failed to instantiate device from message {message}")
+        raise UnsupportedWebSocketMessage(message) from err
 
     raise UnsupportedWebSocketMessage(message)
 
