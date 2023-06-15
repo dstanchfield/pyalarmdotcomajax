@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 from collections.abc import Callable
@@ -175,8 +174,10 @@ class WebSocketClient:
             f"{json.dumps(raw_message, indent=4)}"
         )
 
-        with contextlib.suppress(UnkonwnDevice):
+        try:
             message = process_raw_message(raw_message, self._device_registry)
+        except UnkonwnDevice:
+            return
 
         if type(message) is MonitoringEventMessage:
             log.info(
