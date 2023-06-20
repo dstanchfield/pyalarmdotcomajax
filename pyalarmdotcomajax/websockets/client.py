@@ -6,13 +6,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Callable
+import uuid
+from collections.abc import Awaitable, Callable
 from enum import Enum
+from functools import partial
 
 import aiohttp
 from aiohttp import ClientSession
 
 from pyalarmdotcomajax import const as c
+from pyalarmdotcomajax.const import CB_DATA_WEBSOCKET_STATE
 from pyalarmdotcomajax.devices.garage_door import GarageDoor
 from pyalarmdotcomajax.devices.gate import Gate
 from pyalarmdotcomajax.devices.light import Light
@@ -73,7 +76,6 @@ class WebSocketClient:
         websession: ClientSession,
         ajax_headers: dict,
         device_registry: DeviceRegistry,
-        ws_state_callback: Callable[[WebSocketState], None] | None = None,
     ) -> None:
         """Initialize."""
         self._websession: ClientSession = websession
@@ -82,8 +84,9 @@ class WebSocketClient:
         self._ws_auth_token: str | None = None
         self._ws_connection: aiohttp.ClientWebSocketResponse | None = None
         self._state = WebSocketState.STOPPED
-        self._ws_state_callback = ws_state_callback
         self._loop = asyncio.get_running_loop()
+
+        self._connection_event_listeners: dict[str, Callable[[dict[str, WebSocketState]], Awaitable]] = {}
 
     @property
     def state(self) -> WebSocketState:
@@ -96,11 +99,28 @@ class WebSocketClient:
         self._state = value
         log.debug("Websocket %s", value)
 
-        if self._ws_state_callback:
-            self._ws_state_callback(value)
+        for event_listener in self._connection_event_listeners.values():
+            event_listener({CB_DATA_WEBSOCKET_STATE: value})
+
+    async def register_connection_event_listener(
+        self, event_listener: Callable[[dict[str, WebSocketState]], Awaitable]
+    ) -> Callable:
+        """Register a callback function to be called when an event is received."""
+
+        event_listener_id = str(uuid.uuid4())
+        self._connection_event_listeners.update({event_listener_id: event_listener})
+
+        return partial(self.unregister_connection_event_listener, event_listener_id)
+
+    async def unregister_connection_event_listener(self, event_listener_id: str) -> None:
+        """Register a callback function to be called when an event is received."""
+
+        self._connection_event_listeners.pop(event_listener_id, None)
 
     async def _connect(self) -> None:
         """Connect to Alarm.com WebSocket."""
+
+        self._ws_auth_token = None
 
         # Get authentication token for websocket communication
         try:
@@ -156,13 +176,13 @@ class WebSocketClient:
             if self.state != WebSocketState.STOPPED:
                 self.state = WebSocketState.DISCONNECTED
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """Start websocket and update its state."""
         if self.state != WebSocketState.RUNNING:
             self.state = WebSocketState.STARTING
             self._loop.create_task(self._connect())
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         """Close websocket connection."""
         self.state = WebSocketState.STOPPED
 

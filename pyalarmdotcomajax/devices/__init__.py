@@ -9,7 +9,12 @@ from enum import Enum
 from functools import partial
 from typing import Any, Final, TypedDict
 
-from pyalarmdotcomajax.const import ATTR_DESIRED_STATE, ATTR_STATE, CallbackEventType
+from pyalarmdotcomajax.const import (
+    ATTR_DESIRED_STATE,
+    ATTR_STATE,
+    CB_DATA_DEVICE_ID,
+    CallbackEventType,
+)
 from pyalarmdotcomajax.exceptions import (
     InvalidConfigurationOption,
 )
@@ -84,7 +89,7 @@ class BaseDevice(CastingMixin):
         id_: str,
         send_action_callback: Callable,
         config_change_callback: Callable | None,
-        state_update_callback: Callable[[CallbackEventType, str], Awaitable],
+        state_update_callback: Callable[[CallbackEventType, dict], Awaitable],
         children: list[tuple[str, DeviceType]],
         raw_device_data: dict,
         device_type_specific_data: DeviceTypeSpecificData | None = None,
@@ -326,7 +331,7 @@ class BaseDevice(CastingMixin):
             # Trace logging for @catellie
             log.debug(f"{__name__} triggering external state update callback for {self.name} ({self.id_})")
 
-            await self._state_update_callback(self.id_)
+        await self._state_update_callback({CB_DATA_DEVICE_ID: self.id_})
 
     # #
     # PLACEHOLDERS
