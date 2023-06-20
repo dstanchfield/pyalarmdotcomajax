@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from abc import ABC
 from enum import Enum
 from typing import Any
 
@@ -10,7 +11,7 @@ from bs4 import Tag
 log = logging.getLogger(__name__)
 
 
-class CastingMixin:
+class CastingMixin(ABC):
     """Functions used for pulling data from JSON in standardized format."""
 
     def _safe_int_from_dict(self, src_dict: dict, key: str) -> int | None:

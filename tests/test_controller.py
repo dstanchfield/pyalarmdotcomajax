@@ -55,7 +55,7 @@ async def test___async_update__refresh_failure(
 
 
 @pytest.mark.asyncio
-async def test__async_has_image_sensors(
+async def test__has_image_sensors(
     image_sensors_no_permission: str,
     all_base_ok_responses: str,
     adc_client: AlarmController,

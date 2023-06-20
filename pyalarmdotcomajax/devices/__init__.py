@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from abc import ABC
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -75,7 +74,7 @@ class DeviceTypeSpecificData(TypedDict, total=False):
     raw_recent_images: list[dict]
 
 
-class BaseDevice(ABC, CastingMixin):
+class BaseDevice(CastingMixin):
     """Contains properties shared by all ADC devices."""
 
     _DEVICE_MODELS: dict  # deviceModelId: {"manufacturer": str, "model": str}
@@ -311,20 +310,23 @@ class BaseDevice(ABC, CastingMixin):
             f" new {new_attributes}."
         )
 
-        self.raw_attributes.update(new_attributes)
+        # Only move forward if at least one attribute has changed
+        if changed_attributes := {
+            key: value for key, value in new_attributes.items() if self.raw_attributes.get(key) != value
+        }:
+            if log.level == logging.DEBUG:
+                log_str = "ATTRIBUTE NAME:: Current_Value -> Desired_Value"
+                for key, value in changed_attributes.items():
+                    if (current_value := self.raw_attributes.get(key)) != value:
+                        log_str += f" | {str(key).upper()}:: [{current_value}] -> [{value}]"
+                log.debug(log_str)
 
-        if log.level == logging.DEBUG:
-            log_str = ""
-            for key, value in new_attributes.items():
-                if (current_value := self.raw_attributes.get(key)) != value:
-                    log_str += f" | {str(key).upper()}:: [{current_value}] -> [{value}]"
-            if log_str:
-                log.debug(f"ATTRIBUTE NAME:: Current_Value -> Desired_Value{log_str}")
+            self.raw_attributes.update(new_attributes)
 
-        # Trace logging for @catellie
-        log.debug(f"{__name__} triggering external state update callback for {self.name} ({self.id_})")
+            # Trace logging for @catellie
+            log.debug(f"{__name__} triggering external state update callback for {self.name} ({self.id_})")
 
-        await self._state_update_callback(self.id_)
+            await self._state_update_callback(self.id_)
 
     # #
     # PLACEHOLDERS

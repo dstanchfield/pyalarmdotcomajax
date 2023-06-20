@@ -30,6 +30,7 @@ from pyalarmdotcomajax.devices.registry import (
     DeviceType,
 )
 from pyalarmdotcomajax.exceptions import (
+    AlarmdotcomException,
     AuthenticationFailed,
     ConfigureTwoFactorAuthentication,
     NotAuthorized,
@@ -237,18 +238,20 @@ class AlarmController:
         has_image_sensors: bool = False
 
         if not self._active_system_id:
-            self._active_system_id = await self._async_get_active_system()
-            has_image_sensors = await self._async_has_image_sensors(self._active_system_id)
+            self._active_system_id = await self._get_active_system()
+            has_image_sensors = await self._has_image_sensors(self._active_system_id)
 
-        await self._async_get_trouble_conditions()
+        # We're not currently using trouble conditions for anything, so we don't care if this fails.
+        with contextlib.suppress(AlarmdotcomException):
+            await self._get_trouble_conditions()
 
         #
         # GET CORE DEVICE ATTRIBUTES
         #
 
         device_instances: dict[str, BaseDevice] = {}
-        raw_devices: list[dict] = await self._async_get_system(self._active_system_id)
-        raw_devices.extend(await self._async_get_system_devices(self._active_system_id))
+        raw_devices: list[dict] = await self._get_system(self._active_system_id)
+        raw_devices.extend(await self._get_system_devices(self._active_system_id))
 
         #
         # QUERY MULTI-DEVICE EXTENSIONS
@@ -952,7 +955,7 @@ class AlarmController:
 
         return results
 
-    async def _async_get_active_system(self, retry_on_failure: bool = True) -> str:
+    async def _get_active_system(self, retry_on_failure: bool = True) -> str:
         """Get active system for user account."""
 
         try:
@@ -975,7 +978,7 @@ class AlarmController:
             raise UnexpectedResponse from err
         except TryAgain:
             if retry_on_failure:
-                return await self._async_get_active_system(retry_on_failure=False)
+                return await self._get_active_system(retry_on_failure=False)
 
             raise
 
@@ -1011,7 +1014,7 @@ class AlarmController:
         else:
             return device_type_specific_data
 
-    async def _async_has_image_sensors(self, system_id: str, retry_on_failure: bool = True) -> bool:
+    async def _has_image_sensors(self, system_id: str, retry_on_failure: bool = True) -> bool:
         """Check whether image sensors are present in system.
 
         Check is required because image sensors are not shown in the device catalog endpoint.
@@ -1039,11 +1042,11 @@ class AlarmController:
             raise UnexpectedResponse from err
         except TryAgain:
             if retry_on_failure:
-                return await self._async_has_image_sensors(system_id, retry_on_failure=False)
+                return await self._has_image_sensors(system_id, retry_on_failure=False)
 
             raise
 
-    async def _async_get_system(self, system_id: str, retry_on_failure: bool = True) -> list[dict]:
+    async def _get_system(self, system_id: str, retry_on_failure: bool = True) -> list[dict]:
         """Get all devices present in system."""
 
         try:
@@ -1066,9 +1069,9 @@ class AlarmController:
             log.exception("Failed to get system metadata.")
             raise UnexpectedResponse from err
         except TryAgain:
-            return await self._async_get_system(system_id=system_id, retry_on_failure=False)
+            return await self._get_system(system_id=system_id, retry_on_failure=False)
 
-    async def _async_get_system_devices(self, system_id: str, retry_on_failure: bool = True) -> list[dict]:
+    async def _get_system_devices(self, system_id: str, retry_on_failure: bool = True) -> list[dict]:
         """Get all devices present in system."""
 
         try:
@@ -1095,7 +1098,7 @@ class AlarmController:
             log.exception("Failed to get system devices.")
             raise UnexpectedResponse from err
         except TryAgain:
-            return await self._async_get_system_devices(system_id=system_id, retry_on_failure=False)
+            return await self._get_system_devices(system_id=system_id, retry_on_failure=False)
 
     async def _async_get_devices_by_device_type(
         self, device_type: DeviceType, retry_on_failure: bool = True
@@ -1125,7 +1128,7 @@ class AlarmController:
         except TryAgain:
             return await self._async_get_devices_by_device_type(device_type=device_type, retry_on_failure=False)
 
-    async def _async_get_trouble_conditions(self, retry_on_failure: bool = True) -> None:
+    async def _get_trouble_conditions(self, retry_on_failure: bool = True) -> None:
         """Get trouble conditions for all devices."""
 
         # TODO: Trouble condition dict should be flagged, not None, when library encounters an error retrieving trouble conditions.
@@ -1176,7 +1179,7 @@ class AlarmController:
             raise UnexpectedResponse from err
 
         except TryAgain:
-            return await self._async_get_trouble_conditions(retry_on_failure=False)
+            return await self._get_trouble_conditions(retry_on_failure=False)
 
     async def _async_handle_server_errors(
         self, json_rsp: dict, request_name: str, retry_on_failure: bool = False
